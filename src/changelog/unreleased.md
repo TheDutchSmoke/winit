@@ -47,6 +47,7 @@ changelog entry.
 - On Wayland, add `WindowExtWayland::notify_presentation_paused`, which lets winit commit a
   suspended window's configures while the application isn't presenting.
 - On macOS, add the opt-in `macos-quit-as-close` feature to review native Quit requests through window close handlers and return normally from `run_app_on_demand`.
+- On macOS, with `macos-quit-as-close`, add `take_quit_request` to tell a Quit from a window's close button, including a Quit that arrived while no event loop ran.
 
 ### Fixed
 

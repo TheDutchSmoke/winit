@@ -27,6 +27,8 @@ pub(crate) use self::window::WindowId;
 pub(crate) use self::window_delegate::PlatformSpecificWindowAttributes;
 use crate::event::DeviceId as RootDeviceId;
 
+#[cfg(feature = "macos-quit-as-close")]
+pub(crate) use self::app_state::take_quit_request;
 pub(crate) use self::cursor::CustomCursor as PlatformCustomCursor;
 pub(crate) use self::window::Window;
 pub(crate) use crate::cursor::OnlyCursorImageSource as PlatformCustomCursorSource;

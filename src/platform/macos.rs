@@ -37,6 +37,11 @@
 //! Multi-window applications receive separate close requests and remain
 //! responsible for coordinating a single application-wide decision if needed.
 //!
+//! A close request sent for a Quit looks the same as one from a window's close
+//! button. An application that keeps running after its window closes tells
+//! them apart with [`take_quit_request`], which also reports a Quit that
+//! arrived while no event loop ran.
+//!
 //! Without the feature, native Quit retains the existing AppKit termination
 //! behavior. Cargo features are additive: enabling it anywhere in the dependency
 //! graph enables this behavior for the whole process.
@@ -552,4 +557,25 @@ pub enum OptionAsAlt {
     /// No special handling is applied for `Option` key.
     #[default]
     None,
+}
+
+/// Whether a native Quit request (Command-Q, the application menu, the Dock, a
+/// logout) arrived since the last call, clearing it. Requires the
+/// `macos-quit-as-close` feature.
+///
+/// With that feature a Quit reaches the windows as
+/// [`WindowEvent::CloseRequested`](crate::event::WindowEvent::CloseRequested),
+/// which looks the same as a click on a window's close button. An
+/// application that hides its window on close but quits on Quit calls this
+/// when it sees a close request: `true` means the request is a Quit.
+///
+/// It also reports a Quit that arrived while no event loop ran, such as an
+/// application that runs AppKit's loop itself between windows. Taking the
+/// request there cancels the close requests it would otherwise send to the
+/// next event loop's windows, so the application decides once.
+///
+/// Must be called on the main thread.
+#[cfg(feature = "macos-quit-as-close")]
+pub fn take_quit_request() -> bool {
+    crate::platform_impl::take_quit_request()
 }

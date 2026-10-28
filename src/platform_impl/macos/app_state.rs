@@ -14,6 +14,8 @@ use objc2_foundation::{MainThreadMarker, NSNotification, NSObject, NSObjectProto
 use super::window::WinitWindow;
 #[cfg(feature = "macos-quit-as-close")]
 use objc2_app_kit::NSApplicationTerminateReply;
+#[cfg(feature = "macos-quit-as-close")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::event_handler::EventHandler;
 use super::event_loop::{notify_windows_of_exit, stop_app_immediately, ActiveEventLoop, PanicInfo};
@@ -22,6 +24,26 @@ use super::{menu, WindowId, DEVICE_ID};
 use crate::event::{DeviceEvent, Event, StartCause, WindowEvent};
 use crate::event_loop::{ActiveEventLoop as RootActiveEventLoop, ControlFlow};
 use crate::window::WindowId as RootWindowId;
+
+/// A native Quit request that has not yet been sent to the windows as close
+/// requests. Process-wide, so a request that arrives while no event loop runs
+/// (an application running AppKit's loop itself between windows) still
+/// reaches the next one.
+#[cfg(feature = "macos-quit-as-close")]
+static QUIT_DISPATCH: AtomicBool = AtomicBool::new(false);
+
+/// A native Quit request the application has not yet asked about with
+/// [`take_quit_request`].
+#[cfg(feature = "macos-quit-as-close")]
+static QUIT_REQUEST: AtomicBool = AtomicBool::new(false);
+
+/// Whether a native Quit request arrived since the last call, clearing it, and
+/// cancelling the close requests it would still send to the windows.
+#[cfg(feature = "macos-quit-as-close")]
+pub(crate) fn take_quit_request() -> bool {
+    QUIT_DISPATCH.store(false, Ordering::SeqCst);
+    QUIT_REQUEST.swap(false, Ordering::SeqCst)
+}
 
 #[derive(Debug)]
 pub(super) struct AppState {
@@ -40,8 +62,6 @@ pub(super) struct AppState {
     is_running: Cell<bool>,
     /// Whether the user has requested the event loop to exit.
     exit: Cell<bool>,
-    #[cfg(feature = "macos-quit-as-close")]
-    quit_requested: Cell<bool>,
     control_flow: Cell<ControlFlow>,
     waker: RefCell<EventLoopWaker>,
     start_time: Cell<Option<Instant>>,
@@ -73,7 +93,8 @@ declare_class!(
         fn app_should_terminate(&self, _sender: &NSApplication) -> NSApplicationTerminateReply {
             // Return to the normal run loop; do not terminate underneath the
             // application's close confirmation or enter AppKit's modal wait.
-            self.ivars().quit_requested.set(true);
+            QUIT_DISPATCH.store(true, Ordering::SeqCst);
+            QUIT_REQUEST.store(true, Ordering::SeqCst);
             self.ivars().run_loop.wakeup();
             NSApplicationTerminateReply::NSTerminateCancel
         }
@@ -110,8 +131,6 @@ impl ApplicationDelegate {
             is_launched: Cell::new(false),
             is_running: Cell::new(false),
             exit: Cell::new(false),
-            #[cfg(feature = "macos-quit-as-close")]
-            quit_requested: Cell::new(false),
             control_flow: Cell::new(ControlFlow::default()),
             waker: RefCell::new(EventLoopWaker::new()),
             start_time: Cell::new(None),
@@ -417,7 +436,7 @@ impl ApplicationDelegate {
         self.handle_event(Event::UserEvent(HandlePendingUserEvents));
 
         #[cfg(feature = "macos-quit-as-close")]
-        if self.ivars().quit_requested.replace(false) {
+        if QUIT_DISPATCH.swap(false, Ordering::SeqCst) {
             // This boundary runs after resumed/initial window construction and
             // outside application callbacks. Retain only winit windows: native
             // file panels must keep their own cancellation/lifetime rules.
